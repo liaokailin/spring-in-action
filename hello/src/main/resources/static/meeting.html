@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI会议纪要生成器</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #f8f9fa;
+            padding-top: 20px;
+        }
+        .container {
+            max-width: 800px;
+        }
+        .upload-area {
+            border: 2px dashed #dee2e6;
+            border-radius: 8px;
+            padding: 30px;
+            text-align: center;
+            background-color: white;
+            margin-bottom: 20px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .upload-area:hover {
+            border-color: #0d6efd;
+            background-color: #f8f9ff;
+        }
+        .participant-tag {
+            margin-right: 5px;
+            margin-bottom: 5px;
+        }
+        #resultArea {
+            display: none;
+        }
+        .action-item {
+            background-color: #f8f9fa;
+            border-radius: 5px;
+            padding: 10px;
+            margin-bottom: 10px;
+        }
+        .spinner-border {
+            width: 1.5rem;
+            height: 1.5rem;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1 class="text-center mb-4">AI会议纪要生成器</h1>
+
+    <div class="card mb-4">
+        <div class="card-header bg-primary text-white">
+            <h5 class="mb-0">会议信息</h5>
+        </div>
+        <div class="card-body">
+            <form id="meetingForm">
+                <div class="mb-3">
+                    <label for="meetingType" class="form-label">会议类型</label>
+                    <select class="form-select" id="meetingType" required>
+                        <option value="" selected disabled>请选择会议类型</option>
+                        <option value="项目评审">项目评审</option>
+                        <option value="需求讨论">需求讨论</option>
+                        <option value="团队例会">团队例会</option>
+                        <option value="客户会议">客户会议</option>
+                        <option value="其他">其他</option>
+                    </select>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">参会人员</label>
+                    <div class="input-group mb-2">
+                        <input type="text" class="form-control" id="participantInput" placeholder="输入参会人姓名">
+                        <button class="btn btn-outline-secondary" type="button" id="addParticipant">添加</button>
+                    </div>
+                    <div id="participantTags"></div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">会议录音</label>
+                    <div class="upload-area" id="audioUploadArea">
+                        <div id="audioUploadContent">
+                            <i class="bi bi-mic" style="font-size: 2rem;"></i>
+                            <p class="mt-2">点击或拖拽音频文件到此处</p>
+                            <p class="text-muted small">支持MP3、WAV等格式</p>
+                        </div>
+                        <input type="file" id="audioFile" class="d-none" accept="audio/*">
+                        <div id="audioFileName" class="mt-2 fw-bold"></div>
+                    </div>
+                </div>
+
+                <div class="d-grid">
+                    <button type="submit" class="btn btn-primary" id="generateBtn">
+                        <span id="generateText">生成会议纪要</span>
+                        <span id="generateSpinner" class="spinner-border spinner-border-sm d-none" role="status"></span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="card" id="resultArea">
+        <div class="card-header bg-success text-white">
+            <h5 class="mb-0">会议纪要结果</h5>
+        </div>
+        <div class="card-body">
+            <div class="mb-4">
+                <h5>会议摘要</h5>
+                <p id="summaryText" class="p-3 bg-light rounded"></p>
+            </div>
+
+            <div class="row">
+                <div class="col-md-6 mb-4">
+                    <h5>关键决策</h5>
+                    <ul class="list-group" id="decisionsList"></ul>
+                </div>
+
+                <div class="col-md-6 mb-4">
+                    <h5>讨论要点</h5>
+                    <ul class="list-group" id="keyPointsList"></ul>
+                </div>
+            </div>
+
+            <div class="mb-4">
+                <h5>行动项</h5>
+                <div id="actionItemsContainer"></div>
+            </div>
+
+            <div class="mb-4">
+                <h5>下一步计划</h5>
+                <p id="nextStepsText" class="p-3 bg-light rounded"></p>
+            </div>
+
+            <div class="d-grid">
+                <button class="btn btn-outline-primary" id="downloadBtn">
+                    <i class="bi bi-download"></i> 下载会议纪要
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // 参会人员管理
+        const participants = [];
+        const participantInput = document.getElementById('participantInput');
+        const participantTags = document.getElementById('participantTags');
+        const addParticipantBtn = document.getElementById('addParticipant');
+
+        addParticipantBtn.addEventListener('click', function() {
+            const name = participantInput.value.trim();
+            if (name && !participants.includes(name)) {
+                participants.push(name);
+                participantInput.value = '';
+                renderParticipantTags();
+            }
+        });
+
+        participantInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                addParticipantBtn.click();
+            }
+        });
+
+        function renderParticipantTags() {
+            participantTags.innerHTML = participants.map(name => `
+                    <span class="badge bg-primary participant-tag">
+                        ${name}
+                        <button type="button" class="btn-close btn-close-white btn-sm ms-1"
+                                aria-label="Remove" data-name="${name}"></button>
+                    </span>
+                `).join('');
+
+            // 添加删除事件
+            document.querySelectorAll('.participant-tag .btn-close').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const name = this.getAttribute('data-name');
+                    const index = participants.indexOf(name);
+                    if (index !== -1) {
+                        participants.splice(index, 1);
+                        renderParticipantTags();
+                    }
+                });
+            });
+        }
+
+        // 文件上传处理
+        const audioUploadArea = document.getElementById('audioUploadArea');
+        const audioFileInput = document.getElementById('audioFile');
+        const audioFileName = document.getElementById('audioFileName');
+
+        audioUploadArea.addEventListener('click', function() {
+            audioFileInput.click();
+        });
+
+        audioFileInput.addEventListener('change', function() {
+            if (this.files.length > 0) {
+                audioFileName.textContent = this.files[0].name;
+            }
+        });
+
+        // 拖放功能
+        audioUploadArea.addEventListener('dragover', function(e) {
+            e.preventDefault();
+            this.style.borderColor = '#0d6efd';
+            this.style.backgroundColor = '#f8f9ff';
+        });
+
+        audioUploadArea.addEventListener('dragleave', function() {
+            this.style.borderColor = '#dee2e6';
+            this.style.backgroundColor = 'white';
+        });
+
+        audioUploadArea.addEventListener('drop', function(e) {
+            e.preventDefault();
+            this.style.borderColor = '#dee2e6';
+            this.style.backgroundColor = 'white';
+
+            if (e.dataTransfer.files.length > 0) {
+                audioFileInput.files = e.dataTransfer.files;
+                audioFileName.textContent = e.dataTransfer.files[0].name;
+            }
+        });
+
+        // 表单提交
+        const meetingForm = document.getElementById('meetingForm');
+        const generateBtn = document.getElementById('generateBtn');
+        const generateText = document.getElementById('generateText');
+        const generateSpinner = document.getElementById('generateSpinner');
+        const resultArea = document.getElementById('resultArea');
+
+        meetingForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+
+            const meetingType = document.getElementById('meetingType').value;
+            const audioFile = audioFileInput.files[0];
+
+            if (!meetingType) {
+                alert('请选择会议类型');
+                return;
+            }
+
+            if (participants.length === 0) {
+                alert('请添加至少一名参会人员');
+                return;
+            }
+
+            if (!audioFile) {
+                alert('请上传会议录音文件');
+                return;
+            }
+
+            // 显示加载状态
+            generateText.textContent = '正在生成...';
+            generateSpinner.classList.remove('d-none');
+            generateBtn.disabled = true;
+
+            // 准备表单数据
+            const formData = new FormData();
+            formData.append('audio', audioFile);
+            formData.append('meetingType', meetingType);
+            participants.forEach(p => formData.append('participants', p));
+
+            // 发送请求
+            axios.post('/api/meetings/generate', formData, {
+                headers: {
+                    'Content-Type': 'multipart/form-data'
+                }
+            })
+                .then(response => {
+                    displayResults(response.data);
+                    resultArea.style.display = 'block';
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('生成会议纪要失败: ' + (error.response?.data?.message || error.message));
+                })
+                .finally(() => {
+                    generateText.textContent = '生成会议纪要';
+                    generateSpinner.classList.add('d-none');
+                    generateBtn.disabled = false;
+                });
+        });
+
+        // 显示结果
+        function displayResults(data) {
+            document.getElementById('summaryText').textContent = data.summary;
+
+            const decisionsList = document.getElementById('decisionsList');
+            decisionsList.innerHTML = data.keyDecisions.map(item => `
+                    <li class="list-group-item">${item}</li>
+                `).join('');
+
+            const keyPointsList = document.getElementById('keyPointsList');
+            keyPointsList.innerHTML = data.keyPoints.map(item => `
+                    <li class="list-group-item">${item}</li>
+                `).join('');
+
+            const actionItemsContainer = document.getElementById('actionItemsContainer');
+            actionItemsContainer.innerHTML = data.actionItems.map(item => `
+                    <div class="action-item">
+                        <div class="d-flex justify-content-between">
+                            <strong>${item.task}</strong>
+                            <span class="badge bg-info">${item.dueDate}</span>
+                        </div>
+                        <div class="text-muted">负责人: ${item.owner}</div>
+                    </div>
+                `).join('');
+
+            document.getElementById('nextStepsText').textContent = data.nextSteps;
+        }
+
+        // 下载功能
+        document.getElementById('downloadBtn').addEventListener('click', function() {
+            const summary = document.getElementById('summaryText').textContent;
+            const decisions = Array.from(document.querySelectorAll('#decisionsList li')).map(li => li.textContent).join('\n• ');
+            const keyPoints = Array.from(document.querySelectorAll('#keyPointsList li')).map(li => li.textContent).join('\n• ');
+            const actionItems = Array.from(document.querySelectorAll('.action-item')).map(item => {
+                const task = item.querySelector('strong').textContent;
+                const dueDate = item.querySelector('.badge').textContent;
+                const owner = item.querySelector('.text-muted').textContent.replace('负责人: ', '');
+                return `${task} (${owner}, 截止: ${dueDate})`;
+            }).join('\n• ');
+            const nextSteps = document.getElementById('nextStepsText').textContent;
+
+            const content = `会议纪要
+================
+
+会议摘要
+--------
+${summary}
+
+关键决策
+--------
+• ${decisions}
+
+讨论要点
+--------
+• ${keyPoints}
+
+行动项
+------
+• ${actionItems}
+
+下一步计划
+--------
+${nextSteps}
+
+生成时间: ${new Date().toLocaleString()}
+`;
+
+            const blob = new Blob([content], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `会议纪要_${new Date().toISOString().slice(0, 10)}.txt`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        });
+    });
+</script>
+</body>
+</html>

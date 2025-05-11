@@ -1,0 +1,17 @@
+services:
+  neo4j:
+    image: 'neo4j:latest'
+    environment:
+      - NEO4J_AUTH=neo4j/medicalrag  # 用户名/密码
+      - NEO4JLABS_PLUGINS=["apoc", "graph-data-science"]
+      - NEO4J_dbms_security_procedures_unrestricted=apoc.*,gds.*,db.*
+      - NEO4J_apoc_export_file_enabled=true
+      - NEO4J_apoc_import_file_enabled=true
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    healthcheck:
+      test: ["CMD", "neo4j", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
